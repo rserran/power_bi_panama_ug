@@ -1,2 +1,5 @@
-# power_bi_panama_ug
-Power Bi Panama User Group Talks
+# Power BI Panama User Group Talks/Charlas
+
+## Contenido
+
+-  Teorías y técnicas para la imputación de datos faltantes

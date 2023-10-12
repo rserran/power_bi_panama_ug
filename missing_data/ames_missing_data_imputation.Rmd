@@ -1,0 +1,202 @@
+---
+title: "Técnicas para imputación datos faltantes - AMES Housing Dataset"
+author: "R. J. Serrano"
+date: "2023-10-10"
+output: 
+     html_document:
+          df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
+                      message = FALSE, dpi = 180, 
+                      fig.width = 8, fig.height = 5)
+
+# load packages
+suppressMessages(library(tidyverse))
+library(VIM)
+library(naniar)
+library(kableExtra)
+theme_set(theme_bw())
+```
+
+## AMES Housing Dataset
+
+El dataset titulado 'AMES Housing' contiene información proveniente de la oficina del evaludador de Ames utilizada para calcular los valores tasados de propiedades residenciales individuales vendidas en Ames, IA de 2006 a 2010.
+
+Referencia:
+
+De Cock, D. (2011). "Ames, Iowa: Alternative to the Boston Housing Data as an End of Semester Regression Project," Journal of Statistics Education, Volume 19, Number 3.
+
+Para propósitos de este charla, vamos a seleccionar un subconjunto de variables del dataset original.
+```{r}
+ames <- read_csv('../data/ames.csv') %>% 
+     janitor::clean_names() %>% 
+     select(sale_price, lot_frontage, lot_area, alley, lot_shape, 
+            gr_liv_area, overall_qual, garage_type, garage_cars, 
+            screen_porch, fence, yr_sold, mo_sold)
+
+ames
+```
+
+## EDA
+
+Dimensiones del dataset
+```{r}
+dim(ames)
+```
+
+¿Cuál es el porciento de datos faltantes por variable?
+```{r}
+ames %>% 
+     map_df(~ mean(is.na(.)) * 100) %>% 
+     select_if(colSums(.) > 0)
+```
+
+
+```{r}
+library(skimr)
+skim_without_charts(ames)
+```
+
+Visualizar los datos faltantes
+```{r}
+vis_miss(ames)
+```
+
+¿Qué sucede si eliminamos las filas (rows) donde aparecen al menos un data faltante?
+```{r}
+ames %>% 
+     drop_na() %>% 
+     dim()
+```
+
+Antes de continuar, debemos investigar si el dataset contiene metadata que nos pueda ayudar a entender el significado de los datos faltantes. Por ejemplo:
+```{r}
+ames %>% 
+     count(alley)
+```
+
+En la documentación, encontramos que `NA` en la variable `alley` significa 'No alley access'. Por lo tanto, podemos asignar la etiqueta `None` a los datos faltantes en la variable `alley`.
+```{r}
+ames_imp_1 <- ames %>% 
+     mutate(alley = alley %>% replace_na(., 'None'))
+
+ames_imp_1 %>% 
+     count(alley)
+```
+
+Utilizamos la misma técnica para las variables `garage_type` y `fence`
+```{r}
+ames_imp_2 <- ames_imp_1 %>% 
+     mutate(garage_type = garage_type %>% replace_na(., 'None'), 
+            fence = fence %>% replace_na(., 'None')
+            )
+
+ames_imp_2 %>% 
+     count(garage_type)
+
+ames_imp_2 %>% 
+     count(fence)
+```
+
+En el caso de la variable `garage_cars`, solo tenemos una observación con datos faltantes. Vamos a verificar esa observación.
+```{r}
+ames_imp_2 %>% 
+     filter(is.na(garage_cars))
+```
+
+No tenemos una idea clara, examinando las variables de esta observación, de una valor razonable para imputar la capacidad de vehículos en el garaje. Por lo tanto, una solución es descartar la observación.
+```{r}
+ames_imp_3 <- ames_imp_2 %>% 
+     drop_na(garage_cars)
+```
+
+Solo nos queda una variable con datos faltantes `lot_frontage`. Es una variable númerica continua. Debemos visualizar esta variable con un histograma.
+```{r}
+ames_imp_3 %>% 
+     ggplot(aes(lot_frontage)) + 
+     geom_histogram(fill = 'steelblue')
+```
+
+Vamos a experimentar con la imputación de `lot_frontage` usando la mediana.
+```{r}
+ames_imp_4 <- ames_imp_3 %>% 
+     mutate(across(lot_frontage, ~replace_na(., median(., na.rm = TRUE))))
+
+skimr::skim_without_charts(ames_imp_4)
+```
+
+Vamos a evaluar la calidad de la imputación de esta variable.
+```{r histogram-imp}
+ames_imp_4 %>% 
+     rename(lot_frontage_imp = lot_frontage) %>% 
+     add_column(lot_frontage = ames_imp_3$lot_frontage) %>% 
+     ggplot() + 
+     geom_histogram(aes(lot_frontage, fill = "Lot Frontage"), alpha = 0.3) + 
+     geom_histogram(aes(lot_frontage_imp, fill = "Lot Frontage - imputed"), 
+                    alpha = 0.3) + 
+     scale_fill_manual(values = c("cyan", "red")) + 
+     labs(fill = "Variable Name")
+```
+
+```{r density-imp}
+ames_imp_4 %>% 
+     rename(lot_frontage_imp = lot_frontage) %>% 
+     add_column(lot_frontage = ames_imp_3$lot_frontage) %>% 
+     ggplot() + 
+     geom_density(aes(lot_frontage, fill = "Lot Frontage"), alpha = 0.3) + 
+     geom_density(aes(lot_frontage_imp, fill = "Lot Frontage - imputed"), 
+                    alpha = 0.3) + 
+     scale_fill_manual(values = c("cyan", "red")) + 
+     labs(fill = "Variable Name")
+```
+
+Podemos observar que la imputación usando la mediana provoca un pico que no está presente en los datos originales.
+
+Alternativa: utilizar métodos de regresión/kNN/randomforest que simulen la distribución original de los datos.
+```{r}
+# kNN
+ames_imp_5 <- kNN(ames_imp_3, variable = "lot_frontage")
+
+skimr::skim_without_charts(ames_imp_5)
+```
+
+```{r}
+ames_imp_5 %>% 
+     select(-lot_frontage_imp) %>% 
+     rename(lot_frontage_imp = lot_frontage) %>% 
+     add_column(lot_frontage = ames_imp_3$lot_frontage) %>% 
+     ggplot() + 
+     geom_histogram(aes(lot_frontage, fill = "Lot Frontage"), alpha = 0.3) + 
+     geom_histogram(aes(lot_frontage_imp, fill = "Lot Frontage - imputed"), 
+                    alpha = 0.3) + 
+     scale_fill_manual(values = c("cyan", "red")) + 
+     labs(fill = "Variable Name")
+```
+
+```{r}
+ames_imp_5 %>% 
+     select(-lot_frontage_imp) %>% 
+     rename(lot_frontage_imp = lot_frontage) %>% 
+     add_column(lot_frontage = ames_imp_3$lot_frontage) %>% 
+     ggplot() + 
+     geom_density(aes(lot_frontage, fill = "Lot Frontage"), alpha = 0.3) + 
+     geom_density(aes(lot_frontage_imp, fill = "Lot Frontage - imputed"), 
+                    alpha = 0.3) + 
+     scale_fill_manual(values = c("cyan", "red")) + 
+     labs(fill = "Variable Name")
+```
+
+## Conclusiones
+
+1.  Visualizar las variables y el porcentaje de datos faltantes.
+
+2.  Investigar la documentación y elaboración de los datos.
+
+3.  Utilización de técnicas que reflejen un análisis riguroso y objetivo para la imputación de los datos.
+
+4.  Verificar si la imputación realizada no altera significativamente el perfil original de los datos.
