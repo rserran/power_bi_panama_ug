@@ -57,7 +57,7 @@ ames %>%
 ```
 
 
-```{r}
+```{r render=knitr::normal_print}
 library(skimr)
 skim_without_charts(ames)
 ```
@@ -123,7 +123,7 @@ ames_imp_3 %>%
 ```
 
 Vamos a experimentar con la imputación de `lot_frontage` usando la mediana.
-```{r}
+```{r render=knitr::normal_print}
 ames_imp_4 <- ames_imp_3 %>% 
      mutate(across(lot_frontage, ~replace_na(., median(., na.rm = TRUE))))
 
@@ -158,7 +158,7 @@ ames_imp_4 %>%
 Podemos observar que la imputación usando la mediana provoca un pico que no está presente en los datos originales.
 
 Alternativa: utilizar métodos de regresión/kNN/randomforest que simulen la distribución original de los datos.
-```{r}
+```{r render=knitr::normal_print}
 # kNN
 ames_imp_5 <- kNN(ames_imp_3, variable = "lot_frontage")
 
